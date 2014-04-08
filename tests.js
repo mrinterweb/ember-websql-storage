@@ -17,29 +17,19 @@ function waitsFor(fn, label, time) {
     }
   }, 50);
 }
-//var inc = 0;
-// var id = 1;
-module('CRUD', {
-  setup: function() {
-    waitForDbInit();
-    Ember.run(function() {
-      m = store.createRecord('test_model', {
-        // id:  id,
-        string: 'String!',
-        number: 1234,
-        date: new Date(),
-        boolean: true
-      });
-    });
-  },
-  teardown: function() {
-    // m.destroyRecord();
-  },
-});
 
-// This method is useful for debugging
-var viewTestModelsTable = function(msg) {
-  store.adapterFor('test_model').db.transaction(function(tx) {
+var db = store.adapterFor('test_model').db;
+
+var wipeDB = function() {
+  stop();
+  db.transaction(function(tx) {
+    tx.executeSql('delete from test_models where 1 = 1');
+    start();
+  });
+};
+
+var debugTestModelsTable = function(msg) {
+  db.transaction(function(tx) {
     tx.executeSql('select * from test_models', [], function(_tx, res) {
       console.log(msg);
       console.log('number of rows found:', res.rows.length);
@@ -50,57 +40,81 @@ var viewTestModelsTable = function(msg) {
   });
 };
 
+createFactory = function() {
+  m = store.createRecord('test_model', {
+    string: 'String!',
+    number: 1234,
+    date: new Date(),
+    boolean: true
+  });
+};
+module('Create', {
+  setup: function() {
+    waitForDbInit();
+    wipeDB();
+    createFactory();
+  }
+});
+
 asyncTest('creates a record', function() {
-  Ember.run(function() {
-    viewTestModelsTable('before m.save()');
-    m.save().then(function() {
-      viewTestModelsTable();
-      ok(m.get('number') === 1234);
-      start();
-    }, function(err) {
-      console.error(err, err.message);
-      ok(false);
-      start();
-    });
+  debugTestModelsTable('before m.save()');
+  m.save().then(function() {
+    debugTestModelsTable();
+    ok(m.get('number'), 1234);
+    m.destroyRecord();
+    start();
+  }, function(err) {
+    console.error(err, err.message);
+    ok(false);
+    start();
   });
 });
 
-asyncTest('retrieves a record', function() {
-  Ember.run(function() {
-    m.save().then(function() {
-      viewTestModelsTable('before findAll');
-      var first = store.findAll('test_model')[0];
-      var m2 = store.find('test_model', m.get('id'));
-      m2.then(function() {
-        ok(m2.get('string') == m.get('string'));
-        start();
-      }, function(err) {
-        throw(err);
-        start();
-      });
+module('Read, Update, Delete', {
+  setup: function() {
+    waitForDbInit();
+    wipeDB();
+    createFactory();
+    m.save().then(function(val) {
+      Ember.RSVP.resolve(val);
+    }, function(err) {
+      Ember.RSVP.resolve(err);
+      throw(err);
+      // ok(false);
     });
+  },
+  teardown: function() {
+    if(jQuery.isEmptyObject(m._inFlightAttributes)) {
+      m.on('didLoad', function() {
+        m.destroyRecord();
+      });
+    } else {
+      m.destroyRecord();
+    }
+  }
+});
+
+asyncTest('retrieves a record', function() {
+  debugTestModelsTable('before findAll');
+  var first = store.findAll('test_model')[0];
+  var m2 = store.find('test_model', m.get('id'));
+  m2.then(function() {
+    start();
+    ok(m2.get('string') == m.get('string'));
+  }, function(err) {
+    start();
+    throw(err);
   });
 });
 
 asyncTest('updates a record', function() {
-  Ember.run(function() {
-    m.save().then(function() {
-      m.set('number', 4567);
-      m.save().then(function() {
-        ok(m.get('number') === 4567);
-        start();
-      }, function(err) {
-        throw(err);
-        console.error(err);
-        ok(false);
-        start();
-      });
-    }, function(err) {
-      console.error(err);
-      ok(false);
-      start();
-    });
+  m.set('number', 4567);
+  m.save().then(function() {
+    start();
+    resolve(ok(m.get('number') === 4567));
+  }, function(err) {
+    start();
+    throw(err);
+    // Ember.RSVP.reject(err);
   });
-
 });
-
